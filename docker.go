@@ -4,6 +4,7 @@ import (
   "encoding/json"
   "fmt"
   "io/ioutil"
+  "log"
   "net"
   "net/http"
   "net/url"
@@ -22,22 +23,52 @@ type DockerActor struct {
   Attributes map[string]string
 }
 
-// provide a dialer for the http client to dial the docker unix socket
-func dialUnix(_, _ string) (net.Conn, error) {
-  return net.Dial("unix", config.DockerSock)
+// return an http client for the docker socket
+func dockerClient() (*http.Client) {
+  return &http.Client{ Transport: &http.Transport { Dial: dialDockerSocket, } }
+}
+
+// ping docker to make sure our connection is configured correctly
+func pingDocker() (error) {
+
+  // execute ping request to docker socket
+  response, err := dockerClient().Get("http://docker/_ping")
+
+  // fail if an error occurs during transport
+  if err != nil {
+    return fmt.Errorf("Failed to connect to %s: %s", config.DockerSock, err)
+  }
+
+  // fail if docker did not respond with 200 response code
+  defer response.Body.Close()
+  if response.StatusCode != 200 {
+    if body, err := ioutil.ReadAll(response.Body); err != nil {
+      return fmt.Errorf("Failed to ping %s: %s", config.DockerSock, err)
+    } else {
+      return fmt.Errorf("Failed to ping %s: %s", config.DockerSock, body)
+    }
+  }
+
+  return nil
 }
 
 // decode and stream start/die container events from docker sock to an event channel
-func streamEvents(events chan DockerEvent, errors chan error) {
+func streamDockerEvents(events chan DockerEvent, errors chan error) {
 
   // close the event stream when this method exists
   defer close(events)
 
-  // open an http connection to the docker sock to listen to start/die events
-  client := &http.Client{ Transport: &http.Transport { Dial: dialUnix, } }
-  response, err := client.Get("http://docker/events?filters=" + url.QueryEscape("{\"event\": [\"start\", \"die\"]}"))
+  // prepare list of filters for docker event stream
+  filters, err := dockerEventFilters()
   if err != nil {
-    errors <- fmt.Errorf("Failed to connect to docker. %s", err)
+    errors <- fmt.Errorf("Failed to prepare docker event filters. %s", err)
+    return
+  }
+
+  // open an http connection to the docker sock to listen to start/die events
+  response, err := dockerClient().Get("http://docker/events?filters=" + url.QueryEscape(string(filters)))
+  if err != nil {
+    errors <- fmt.Errorf("Failed to connect to %s: %s", config.DockerSock, err)
     return
   }
 
@@ -56,6 +87,7 @@ func streamEvents(events chan DockerEvent, errors chan error) {
 
   // attach a json decoder to the response stream
   decoder := json.NewDecoder(response.Body)
+  log.Println("Listening for container events...")
 
   // decode events into objects and send them to event stream
   for {
@@ -66,4 +98,18 @@ func streamEvents(events chan DockerEvent, errors chan error) {
     }
     events <- event
   }
+}
+
+// filter only container start/die events with keydrop.app-id label
+func dockerEventFilters() ([]byte, error) {
+  filters := make(map[string][]string)
+  filters["type"] = []string{"container"}
+  filters["event"] = []string{"start", "die"}
+  filters["label"] = []string{"keydrop.app-id"}
+  return json.Marshal(filters)
+}
+
+// provide a dialer for the http client to dial the docker unix socket
+func dialDockerSocket(_, _ string) (net.Conn, error) {
+  return net.Dial("unix", config.DockerSock)
 }
