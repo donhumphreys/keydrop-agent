@@ -16,7 +16,7 @@ func main() {
   errors := make(chan error)
 
   // create new thread to react to docker events
-  go printEvents(events)
+  go printEvents(events, errors)
 
   // create new thread to listen to docker socket and pass events to listen
   go streamDockerEvents(events, errors)
@@ -42,8 +42,16 @@ func verifyConfiguration() {
 }
 
 // listen to event stream and print out event information
-func printEvents(events chan DockerEvent) {
+func printEvents(events chan DockerEvent, errors chan error) {
   for event := range events {
-    log.Printf("Type: %s, ID: %s, Action: %s\n", event.Type, event.Actor.ID, event.Action)
+
+    // read container information from docker api
+    container, err := getDockerContainer(event.Actor.ID)
+    if err != nil {
+      errors <- err
+    }
+
+    // print event and container information
+    log.Printf("ID: %.12s, SHA: %.19s, App-ID: %s, Action: %s\n", event.Actor.ID, container.Image, container.Config.Labels["keydrop.app-id"], event.Action)
   }
 }

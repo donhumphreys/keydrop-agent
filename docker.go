@@ -10,6 +10,16 @@ import (
   "net/url"
 )
 
+type DockerContainer struct {
+  ID string
+  Image string
+  Config DockerContainerConfig
+}
+
+type DockerContainerConfig struct {
+  Labels map[string]string
+}
+
 type DockerEvent struct {
   Action string
   Actor DockerActor
@@ -50,6 +60,36 @@ func pingDocker() (error) {
   }
 
   return nil
+}
+
+// fetch and decode container information for the container matching the id
+func getDockerContainer(id string) (container DockerContainer, err error) {
+  // open an http connection to the docker sock to request container info
+  response, err := dockerClient().Get(fmt.Sprintf("http://docker/containers/%.12s/json", id))
+  if err != nil {
+    return container, fmt.Errorf("Failed to connect to %s: %s", config.DockerSock, err)
+  }
+
+  // close the response body when this method exits
+  defer response.Body.Close()
+
+  // make sure the http response code is 200, not anything else
+  if response.StatusCode != 200 {
+    if body, err := ioutil.ReadAll(response.Body); err != nil {
+      return container, fmt.Errorf("Unexpected %d response. %s", response.StatusCode, err)
+    } else {
+      return container, fmt.Errorf("Unexpected %d response: %s", response.StatusCode, body)
+    }
+  }
+
+  // decode container json into object describing container
+  if body, err := ioutil.ReadAll(response.Body); err != nil {
+    return container, fmt.Errorf("Could not read docker response for container %.12s. %s", id, err)
+  } else if err = json.Unmarshal(body, &container); err != nil {
+    return container, fmt.Errorf("Could not decode container %.12s json. %s", id, err)
+  }
+
+  return container, nil
 }
 
 // decode and stream start/die container events from docker sock to an event channel
@@ -94,7 +134,7 @@ func streamDockerEvents(events chan DockerEvent, errors chan error) {
     var event DockerEvent
     if err = decoder.Decode(&event); err != nil {
       errors <- err
-      break
+      return
     }
     events <- event
   }
