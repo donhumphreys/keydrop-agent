@@ -44,14 +44,31 @@ func verifyConfiguration() {
 // listen to event stream and print out event information
 func printEvents(events chan DockerEvent, errors chan error) {
   for event := range events {
-
-    // read container information from docker api
-    container, err := getDockerContainer(event.Actor.ID)
-    if err != nil {
-      errors <- err
+    switch event.Action {
+      case "start":
+        handleStartEvent(event, errors)
+      case "die":
+        handleStopEvent(event, errors)
+      default:
+        log.Printf("Unhandled event \"%s\" for container %.12s.\n", event.Action, event.Actor.ID)
     }
-
-    // print event and container information
-    log.Printf("ID: %.12s, SHA: %.19s, App-ID: %s, Action: %s\n", event.Actor.ID, container.Image, container.Config.Labels["keydrop.app-id"], event.Action)
   }
+}
+
+// fetch and print detailed container information for container start event
+func handleStartEvent(event DockerEvent, errors chan error) {
+
+  // read container information from docker api
+  container, err := getDockerContainer(event.Actor.ID)
+  if err != nil {
+    errors <- err
+  }
+
+  // print event and container information
+  log.Printf("ID: %.12s, Action: %s, SHA: %.19s, App-ID: %s, IP: %s", event.Actor.ID, event.Action, container.Image, container.Config.Labels["keydrop.app-id"], container.NetworkSettings.IPAddress)
+}
+
+// print event information for container stop event
+func handleStopEvent(event DockerEvent, errors chan error) {
+  log.Printf("ID: %.12s, Action: %s\n", event.Actor.ID, event.Action)
 }

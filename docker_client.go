@@ -10,29 +10,6 @@ import (
   "net/url"
 )
 
-type DockerContainer struct {
-  ID string
-  Image string
-  Config DockerContainerConfig
-}
-
-type DockerContainerConfig struct {
-  Labels map[string]string
-}
-
-type DockerEvent struct {
-  Action string
-  Actor DockerActor
-  Time int64
-  TimeNano int64
-  Type string
-}
-
-type DockerActor struct {
-  ID string
-  Attributes map[string]string
-}
-
 // return an http client for the docker socket
 func dockerClient() (*http.Client) {
   return &http.Client{ Transport: &http.Transport { Dial: dialDockerSocket, } }
@@ -82,10 +59,14 @@ func getDockerContainer(id string) (container DockerContainer, err error) {
     }
   }
 
-  // decode container json into object describing container
-  if body, err := ioutil.ReadAll(response.Body); err != nil {
+  // read entire json encoded response body
+  body, err := ioutil.ReadAll(response.Body)
+  if err != nil {
     return container, fmt.Errorf("Could not read docker response for container %.12s. %s", id, err)
-  } else if err = json.Unmarshal(body, &container); err != nil {
+  }
+
+  // decode json response body into container object
+  if err = json.Unmarshal(body, &container); err != nil {
     return container, fmt.Errorf("Could not decode container %.12s json. %s", id, err)
   }
 
