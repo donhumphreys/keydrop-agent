@@ -31,16 +31,6 @@ func main() {
   os.Exit(0)
 }
 
-// verify docker and vault connections are configured correctly
-func verifyConfiguration() {
-  if err := pingDocker(); err == nil {
-    log.Printf("Connected to docker at: %s\n", config.DockerSock)
-  } else {
-    log.Println(err)
-    os.Exit(1)
-  }
-}
-
 // listen to event stream and print out event information
 func printEvents(events chan DockerEvent, errors chan error) {
   for event := range events {

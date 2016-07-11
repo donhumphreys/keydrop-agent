@@ -19,7 +19,7 @@ func dockerClient() (*http.Client) {
 func pingDocker() (error) {
 
   // execute ping request to docker socket
-  response, err := dockerClient().Get("http://docker/_ping")
+  response, err := dockerClient().Get(dockerUrl("_ping"))
 
   // fail if an error occurs during transport
   if err != nil {
@@ -42,7 +42,7 @@ func pingDocker() (error) {
 // fetch and decode container information for the container matching the id
 func getDockerContainer(id string) (container DockerContainer, err error) {
   // open an http connection to the docker sock to request container info
-  response, err := dockerClient().Get(fmt.Sprintf("http://docker/containers/%.12s/json", id))
+  response, err := dockerClient().Get(dockerUrl(fmt.Sprintf("containers/%.12s/json", id)))
   if err != nil {
     return container, fmt.Errorf("Failed to connect to %s: %s", config.DockerSock, err)
   }
@@ -87,7 +87,7 @@ func streamDockerEvents(events chan DockerEvent, errors chan error) {
   }
 
   // open an http connection to the docker sock to listen to start/die events
-  response, err := dockerClient().Get("http://docker/events?filters=" + url.QueryEscape(string(filters)))
+  response, err := dockerClient().Get(dockerUrl("events?filters=" + url.QueryEscape(string(filters))))
   if err != nil {
     errors <- fmt.Errorf("Failed to connect to %s: %s", config.DockerSock, err)
     return
@@ -133,4 +133,9 @@ func dockerEventFilters() ([]byte, error) {
 // provide a dialer for the http client to dial the docker unix socket
 func dialDockerSocket(_, _ string) (net.Conn, error) {
   return net.Dial("unix", config.DockerSock)
+}
+
+// generate url for docker api
+func dockerUrl(path string) (string) {
+  return fmt.Sprintf("http://docker/%s", path)
 }
